@@ -4,8 +4,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -20,16 +22,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import kz.kbtu.library.model.LibraryItem
-import kz.kbtu.library.model.Member
+import kz.kbtu.library.model.LoanPolicy
+import kz.kbtu.library.model.MemberStatus
+import kz.kbtu.library.ui.util.formatMoney
 
-// Choose who borrows the item
+// Choose a member. When mustBeAbleToBorrow is true, members who reached the limit
+// or owe a fine are shown but cannot be selected.
 @Composable
 fun MemberPickerDialog(
-    item: LibraryItem,
-    members: List<Member>,
-    loanCountOf: (Member) -> Int,
-    maxLoans: Int,
+    title: String,
+    description: String,
+    confirmLabel: String,
+    members: List<MemberStatus>,
+    mustBeAbleToBorrow: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (memberId: Int) -> Unit
 ) {
@@ -37,38 +42,49 @@ fun MemberPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Borrow \"${item.title}\"") },
+        title = { Text(title) },
         text = {
             if (members.isEmpty()) {
                 Text("There are no members yet. Register one on the Members tab first.")
             } else {
-                Column(modifier = Modifier.selectableGroup()) {
+                Column(modifier = Modifier.selectableGroup().verticalScroll(rememberScrollState())) {
                     Text(
-                        text = "Loan period: ${item.loanDays()} days. Who takes it?",
+                        text = description,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    members.forEach { member ->
-                        val count = loanCountOf(member)
-                        val full = count >= maxLoans
+                    members.forEach { status ->
+                        val enabled = !mustBeAbleToBorrow || status.canBorrow
+                        val problem = when {
+                            status.unpaidFine > 0 -> "owes ${formatMoney(status.unpaidFine)}"
+                            status.atLimit -> "limit reached"
+                            else -> null
+                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .selectable(
-                                    selected = selectedId == member.id,
-                                    onClick = { selectedId = member.id },
+                                    selected = selectedId == status.member.id,
+                                    enabled = enabled,
+                                    onClick = { selectedId = status.member.id },
                                     role = Role.RadioButton
                                 )
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            RadioButton(selected = selectedId == member.id, onClick = null)
+                            RadioButton(selected = selectedId == status.member.id, onClick = null, enabled = enabled)
                             Column(modifier = Modifier.padding(start = 12.dp)) {
-                                Text(member.name, style = MaterialTheme.typography.bodyLarge)
                                 Text(
-                                    text = "$count of $maxLoans loans" + if (full) " · limit reached" else "",
+                                    text = status.member.name,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = if (enabled) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "${status.activeLoans} of ${LoanPolicy.MAX_LOANS} loans" +
+                                        (problem?.let { " · $it" } ?: ""),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (full) MaterialTheme.colorScheme.error
+                                    color = if (problem != null) MaterialTheme.colorScheme.error
                                     else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -81,7 +97,7 @@ fun MemberPickerDialog(
             TextButton(
                 enabled = selectedId != null,
                 onClick = { selectedId?.let(onConfirm) }
-            ) { Text("Borrow") }
+            ) { Text(confirmLabel) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

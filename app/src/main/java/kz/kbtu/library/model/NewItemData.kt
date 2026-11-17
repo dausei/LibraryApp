@@ -1,6 +1,6 @@
 package kz.kbtu.library.model
 
-// Data from the add item form, the id is assigned later
+// Data from the item form, the id is assigned by the database
 sealed interface NewItemData {
     val title: String
     val year: Int
@@ -24,11 +24,4 @@ sealed interface NewItemData {
         override val year: Int,
         val minutesLong: Int
     ) : NewItemData
-}
-
-// Turns form data into a real item
-fun NewItemData.toItem(id: Int): LibraryItem = when (this) {
-    is NewItemData.NewBook -> Book(id, title, year, author, pages, genre)
-    is NewItemData.NewMagazine -> Magazine(id, title, year, issueNumber)
-    is NewItemData.NewDvd -> Dvd(id, title, year, minutesLong)
 }

@@ -24,6 +24,8 @@ import kz.kbtu.library.model.LibraryStats
 import kz.kbtu.library.ui.components.ItemTypeIcon
 import kz.kbtu.library.ui.components.SectionTitle
 import kz.kbtu.library.ui.components.StatCard
+import kz.kbtu.library.ui.util.formatMoney
+import kz.kbtu.library.ui.util.plural
 
 // Statistics computed from the catalog
 @OptIn(ExperimentalLayoutApi::class)
@@ -63,6 +65,59 @@ fun StatsScreen(
                     label = "Pages in all books",
                     modifier = Modifier.weight(1f)
                 )
+            }
+        }
+
+        item { SectionTitle("Lending activity") }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatCard(
+                    value = stats.totalLoans.toString(),
+                    label = "Loans in history",
+                    modifier = Modifier.weight(1f)
+                )
+                StatCard(
+                    value = stats.overdueLoans.toString(),
+                    label = "Overdue now",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatCard(
+                    value = formatMoney(stats.finesOutstanding),
+                    label = "Fines to collect",
+                    modifier = Modifier.weight(1f)
+                )
+                StatCard(
+                    value = formatMoney(stats.finesCollected),
+                    label = "Fines collected",
+                    supporting = "${stats.openReservations} open reservations",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item { SectionTitle("Most borrowed") }
+        item {
+            StatsSectionCard {
+                if (stats.mostBorrowed.isEmpty()) {
+                    Text("No loans yet", style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        stats.mostBorrowed.forEach { (item, count) ->
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ItemTypeIcon(type = item.type, size = 40.dp)
+                                Text(item.title, modifier = Modifier.weight(1f))
+                                Text(plural(count, "loan"), style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                    }
+                }
             }
         }
 

@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose) // Compose compiler plugin: turns @Composable functions into UI code
+    alias(libs.plugins.ksp) // Runs the Room annotation processor
 }
 
 android {
@@ -15,6 +16,7 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -41,6 +43,11 @@ dependencies {
     implementation(libs.androidx.navigation.compose) // NavHost, NavController, routes
     implementation(libs.kotlinx.coroutines.android)
 
+    // Room: local SQLite database (entities, DAOs, Flow queries, coroutines)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
@@ -51,6 +58,11 @@ dependencies {
     // Local JVM unit tests (app/src/test)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // Instrumented tests (app/src/androidTest): run on a device or emulator, use a real in-memory Room database
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
 
     // Only in debug builds: Android Studio @Preview support
     debugImplementation(libs.androidx.compose.ui.tooling)

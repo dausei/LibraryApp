@@ -11,18 +11,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,49 +29,34 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kz.kbtu.library.model.ItemType
-import kz.kbtu.library.model.Library
-import kz.kbtu.library.model.NewItemData
-import kz.kbtu.library.ui.LibraryUiState
 import kz.kbtu.library.ui.components.EmptyState
 import kz.kbtu.library.ui.components.LibraryItemCard
 import kz.kbtu.library.ui.components.SearchField
 import kz.kbtu.library.ui.components.TypeFilterRow
-import kz.kbtu.library.ui.dialogs.AddItemDialog
 import kz.kbtu.library.ui.dialogs.MemberPickerDialog
+import kz.kbtu.library.ui.viewmodel.CatalogUiState
 
 // Search, filters, list of items and the add item button
 @Composable
 fun CatalogScreen(
-    state: LibraryUiState,
+    state: CatalogUiState,
     onQueryChange: (String) -> Unit,
     onTypeFilterChange: (ItemType?) -> Unit,
     onOnlyAvailableChange: (Boolean) -> Unit,
-    onAddItem: (NewItemData) -> Unit,
+    onAddItem: () -> Unit,
     onBorrow: (memberId: Int, itemId: Int) -> Unit,
     onReturn: (itemId: Int) -> Unit,
     onItemClick: (itemId: Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Dialog state survives rotation
-    var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    // Which item the member picker is open for. Survives rotation.
     var borrowItemId by rememberSaveable { mutableStateOf<Int?>(null) }
 
     // Local copy of the search text so typing stays smooth
     var queryText by remember { mutableStateOf(state.query) }
 
-    val listState = rememberLazyListState()
-
-    var knownItemCount by remember { mutableIntStateOf(state.items.size) }
-    LaunchedEffect(state.items.size) {
-        if (state.items.size > knownItemCount && state.visibleItems.isNotEmpty()) {
-            listState.animateScrollToItem(state.visibleItems.size)
-        }
-        knownItemCount = state.items.size
-    }
-
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
-            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -100,7 +83,7 @@ fun CatalogScreen(
                         )
                         Spacer(Modifier.weight(1f))
                         Text(
-                            text = "${state.visibleItems.size} of ${state.items.size}",
+                            text = "${state.entries.size} of ${state.totalItems}",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -108,21 +91,32 @@ fun CatalogScreen(
                 }
             }
 
-            if (state.visibleItems.isEmpty()) {
-                item(key = "empty") {
+            when {
+                state.isLoading -> item(key = "loading") {
+                    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+                state.totalItems == 0 -> item(key = "empty-catalog") {
+                    EmptyState(
+                        title = "The catalog is empty",
+                        message = "Tap \"Add item\" to put the first book, magazine or DVD on the shelf."
+                    )
+                }
+                state.entries.isEmpty() -> item(key = "nothing-found") {
                     EmptyState(
                         title = "Nothing found",
                         message = "Try another search text or turn off some filters."
                     )
                 }
-            } else {
-                items(state.visibleItems, key = { it.id }) { item ->
+                else -> items(state.entries, key = { it.item.id }) { entry ->
                     LibraryItemCard(
-                        item = item,
-                        borrower = state.borrowerOf(item.id),
-                        onClick = { onItemClick(item.id) },
-                        onBorrow = { borrowItemId = item.id },
-                        onReturn = { onReturn(item.id) },
+                        item = entry.item,
+                        availability = entry.availability,
+                        onClick = { onItemClick(entry.item.id) },
+                        onBorrow = { borrowItemId = entry.item.id },
+                        onReturn = { onReturn(entry.item.id) },
+                        onPickUp = { memberId -> onBorrow(memberId, entry.item.id) },
                         modifier = Modifier.animateItem()
                     )
                 }
@@ -130,7 +124,7 @@ fun CatalogScreen(
         }
 
         ExtendedFloatingActionButton(
-            onClick = { showAddDialog = true },
+            onClick = onAddItem,
             icon = { Icon(Icons.Default.Add, contentDescription = null) },
             text = { Text("Add item") },
             modifier = Modifier
@@ -139,23 +133,14 @@ fun CatalogScreen(
         )
     }
 
-    if (showAddDialog) {
-        AddItemDialog(
-            onDismiss = { showAddDialog = false },
-            onConfirm = { newItem ->
-                onAddItem(newItem)
-                showAddDialog = false
-            }
-        )
-    }
-
     borrowItemId?.let { itemId ->
-        state.items.find { it.id == itemId }?.let { item ->
+        state.entries.find { it.item.id == itemId }?.let { entry ->
             MemberPickerDialog(
-                item = item,
+                title = "Borrow \"${entry.item.title}\"",
+                description = "Loan period: ${entry.item.loanDays()} days. Who takes it?",
+                confirmLabel = "Borrow",
                 members = state.members,
-                loanCountOf = { member -> state.itemsBorrowedBy(member.id).size },
-                maxLoans = Library.MAX_LOANS,
+                mustBeAbleToBorrow = true,
                 onDismiss = { borrowItemId = null },
                 onConfirm = { memberId ->
                     onBorrow(memberId, itemId)
